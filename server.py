@@ -41,8 +41,16 @@ mcp = FastMCP(
     "Live Exam MCP Server",
     stateless_http=True,
     json_response=True,
+    transport_security={
+        "enable_dns_rebinding_protection": True,
+        "allowed_hosts": [
+            "live-mcp-server-9hz5.onrender.com",
+        ],
+        "allowed_origins": [
+            "https://live-mcp-server-9hz5.onrender.com",
+        ],
+    },
 )
-
 
 @mcp.tool()
 def solve_challenge() -> str:
