@@ -42,14 +42,7 @@ class HeaderCapture:
 
 
 security = TransportSecuritySettings(
-    enable_dns_rebinding_protection=True,
-    allowed_hosts=[
-        HOST,
-        f"{HOST}:*",
-    ],
-    allowed_origins=[
-        f"https://{HOST}",
-    ],
+    enable_dns_rebinding_protection=False,
 )
 
 mcp = FastMCP(
@@ -76,17 +69,8 @@ async def lifespan(app):
     async with mcp.session_manager.run():
         yield
 
-
-app = Starlette(
-    routes=[
-        Mount(
-            "/",
-            app=HeaderCapture(
-                mcp.streamable_http_app(
-                    transport_security=security
-                )
-            ),
-        ),
-    ],
-    lifespan=lifespan,
+app = HeaderCapture(
+    mcp.streamable_http_app(transport_security=security)
 )
+
+
