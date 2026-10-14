@@ -4,17 +4,18 @@ from contextlib import asynccontextmanager
 from contextvars import ContextVar
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 from starlette.applications import Starlette
 from starlette.routing import Mount
 
 EMAIL = "23f3003296@ds.study.iitm.ac.in"
+HOST = "live-mcp-server-9hz5.onrender.com"
 
-# Isolated per HTTP request, so concurrent calls don't share challenges.
 current_challenge = ContextVar("current_challenge", default=None)
 
 
 class HeaderCapture:
-    """Capture the HTTP headers for the current MCP request."""
+    """Capture the challenge header for each HTTP request."""
 
     def __init__(self, app):
         self.app = app
@@ -28,7 +29,10 @@ class HeaderCapture:
             key.lower(): value
             for key, value in scope.get("headers", [])
         }
-        challenge = headers.get(b"x-exam-challenge", b"").decode("ascii")
+
+        challenge = headers.get(
+            b"x-exam-challenge", b""
+        ).decode("ascii")
 
         token = current_challenge.set(challenge)
         try:
@@ -37,31 +41,34 @@ class HeaderCapture:
             current_challenge.reset(token)
 
 
+security = TransportSecuritySettings(
+    enable_dns_rebinding_protection=True,
+    allowed_hosts=[
+        HOST,
+        f"{HOST}:*",
+    ],
+    allowed_origins=[
+        f"https://{HOST}",
+    ],
+)
+
 mcp = FastMCP(
     "Live Exam MCP Server",
     stateless_http=True,
     json_response=True,
-    transport_security={
-        "enable_dns_rebinding_protection": True,
-        "allowed_hosts": [
-            "live-mcp-server-9hz5.onrender.com",
-        ],
-        "allowed_origins": [
-            "https://live-mcp-server-9hz5.onrender.com",
-        ],
-    },
 )
+
 
 @mcp.tool()
 def solve_challenge() -> str:
-    """Solve the current challenge supplied in the HTTP request headers."""
+    """Return the SHA-256 challenge response from the HTTP header."""
     challenge = current_challenge.get()
 
     if not challenge:
         raise ValueError("Missing X-Exam-Challenge header")
 
-    value = f"{challenge}:{EMAIL}"
-    return hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
+    payload = f"{challenge}:{EMAIL}"
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
 
 
 @asynccontextmanager
@@ -72,7 +79,14 @@ async def lifespan(app):
 
 app = Starlette(
     routes=[
-        Mount("/", app=HeaderCapture(mcp.streamable_http_app()))
+        Mount(
+            "/",
+            app=HeaderCapture(
+                mcp.streamable_http_app(
+                    transport_security=security
+                )
+            ),
+        ),
     ],
     lifespan=lifespan,
 )
